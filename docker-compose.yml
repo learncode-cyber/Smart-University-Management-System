@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ums_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ums_password}
+      POSTGRES_DB: ${POSTGRES_DB:-ums_db}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"  # Default to 5433 if 5432 is already in use on host
+    volumes:
+      - ums_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ums_user} -d ${POSTGRES_DB:-ums_db}"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - ums_network
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-ums_user}:${POSTGRES_PASSWORD:-ums_password}@postgres:5432/${POSTGRES_DB:-ums_db}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-only-secret-change-in-production}
+      DEFAULT_UNIVERSITY_ID: ${DEFAULT_UNIVERSITY_ID:-1}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    networks:
+      - ums_network
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://localhost:8000}
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    networks:
+      - ums_network
+
+volumes:
+  ums_postgres_data:
+
+networks:
+  ums_network:
+    driver: bridge
